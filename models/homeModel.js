@@ -5,7 +5,7 @@ const { CustomError } = require('../middleware/errorHandler');
 
 class HomeModel {
     static async getAiringAnime(page) {
-        const results = await Animepahe.getData("airing", { page });
+        const results = await Animepahe.getData("airing", { page }, true);
 
         if (!results || !results.data) {
             throw new CustomError('No airing anime data found', 404);

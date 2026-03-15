@@ -251,6 +251,65 @@ class Animepahe {
         }
     }
 
+    async scrapeAiringData() {
+        const url = Config.getUrl('home');
+        let cookieHeader = await this.getCookies();
+        let html;
+
+        try {
+            html = await RequestManager.fetch(url, cookieHeader);
+        } catch (error) {
+            if (error.response?.status === 403 || error.message?.includes('authentication required')) {
+                await this.refreshCookies();
+                cookieHeader = await this.getCookies();
+                html = await RequestManager.fetch(url, cookieHeader);
+            } else {
+                throw error;
+            }
+        }
+
+        if (!html) {
+            throw new CustomError('Failed to fetch home page', 503);
+        }
+
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(html);
+        const latestReleases = [];
+
+        $('.latest-releases .box, .latest-releases .col-12').each((i, element) => {
+            const $el = $(element);
+            const anchor = $el.find('a');
+            const img = $el.find('img');
+            const badge = $el.find('.episode-number, .badge');
+            
+            if (anchor.length > 0) {
+                const sessionUrl = anchor.attr('href') || anchor.attr('data-href');
+                let session = null;
+                if (sessionUrl) {
+                    const parts = sessionUrl.split('/play/');
+                    if (parts.length > 1) {
+                        session = parts[1].split('/')[0];
+                    } else if (sessionUrl.includes('/anime/')) {
+                        session = sessionUrl.split('/anime/')[1];
+                    }
+                }
+
+                latestReleases.push({
+                    title: anchor.attr('title') || img.attr('alt'),
+                    poster: img.attr('data-src') || img.attr('src'),
+                    session: session,
+                    episode: badge.length ? badge.text().trim() : '1'
+                });
+            }
+        });
+
+        // Filter and ensure full URLs
+        return latestReleases.filter(item => item.title && item.poster && item.session).map(item => ({
+             ...item,
+             poster: item.poster.startsWith('//') ? `https:${item.poster}` : (item.poster.startsWith('/') ? `${Config.getUrl('home')}${item.poster}` : item.poster)
+        }));
+    }
+
     async fetchIframeHtml(id, episodeId, url) {
         if (!url) {
             throw new CustomError('URL is required', 400);
@@ -650,6 +709,8 @@ class Animepahe {
                 }
             } else {
                 switch (type) {
+                    case 'airing':
+                        return await this.scrapeAiringData();
                     case 'animeList':
                         return await this.scrapeAnimeList(params.tag1, params.tag2);
                     case 'animeInfo':
